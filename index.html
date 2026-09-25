@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebRTC - Dispositivo B</title>
+
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #111827;
+            color: white;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: auto;
+            background: #1f2937;
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        textarea,
+        input {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 12px;
+            margin: 8px 0;
+            border-radius: 8px;
+            border: none;
+        }
+
+        textarea {
+            height: 160px;
+            resize: vertical;
+            background: #111827;
+            color: white;
+        }
+
+        button {
+            padding: 12px 18px;
+            border: none;
+            border-radius: 8px;
+            background: #16a34a;
+            color: white;
+            cursor: pointer;
+            margin: 5px 0;
+        }
+
+        button:hover {
+            background: #15803d;
+        }
+
+        #chat {
+            height: 250px;
+            overflow-y: auto;
+            background: #111827;
+            border-radius: 8px;
+            padding: 10px;
+            margin-top: 15px;
+        }
+
+        .msg {
+            padding: 8px;
+            margin: 5px 0;
+            background: #374151;
+            border-radius: 6px;
+        }
+
+        .mine {
+            background: #16a34a;
+            text-align: right;
+        }
+
+        #status {
+            padding: 12px;
+            background: #374151;
+            border-radius: 8px;
+            margin: 15px 0;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="container">
+
+    <h1>🅱️ Dispositivo B</h1>
+
+    <div id="status">
+        🔴 Desconectado
+    </div>
+
+    <h3>1. Cole a oferta do dispositivo A</h3>
+
+    <textarea
+        id="offer"
+        placeholder="Cole aqui a Offer do dispositivo A..."
+    ></textarea>
+
+    <button onclick="criarAnswer()">
+        Criar Answer
+    </button>
+
+    <h3>2. Envie esta resposta para o dispositivo A</h3>
+
+    <textarea
+        id="answer"
+        readonly
+        placeholder="A resposta aparecerá aqui..."
+    ></textarea>
+
+    <hr>
+
+    <h2>💬 Chat</h2>
+
+    <div id="chat"></div>
+
+    <input
+        id="mensagem"
+        placeholder="Digite uma mensagem..."
+        onkeydown="if(event.key === 'Enter') enviarMensagem()"
+    >
+
+    <button onclick="enviarMensagem()">
+        Enviar
+    </button>
+
+</div>
+
+
+<script>
+
+let peer = null;
+let channel = null;
+
+
+/*
+ * CONFIGURAÇÃO WEBRTC
+ */
+
+const config = {
+
+    iceServers: [
+
+        {
+            urls: "stun:stun.l.google.com:19302"
+        },
+
+        {
+            urls: "stun:stun1.l.google.com:19302"
+        }
+
+    ]
+
+};
+
+
+/*
+ * CRIAR ANSWER
+ */
+
+async function criarAnswer() {
+
+    const texto =
+        document.getElementById("offer").value.trim();
+
+
+    if (!texto) {
+
+        alert(
+            "Cole primeiro a Offer do dispositivo A."
+        );
+
+        return;
+
+    }
+
+
+    try {
+
+        const offer =
+            JSON.parse(texto);
+
+
+        peer =
+            new RTCPeerConnection(config);
+
+
+        /*
+         * B recebe o DataChannel criado por A
+         */
+
+        peer.ondatachannel = event => {
+
+            console.log(
+                "DataChannel recebido!"
+            );
+
+
+            channel =
+                event.channel;
+
+
+            configurarChannel(channel);
+
+        };
+
+
+        /*
+         * Configura a Offer
+         */
+
+        await peer.setRemoteDescription(
+            new RTCSessionDescription(offer)
+        );
+
+
+        /*
+         * Cria Answer
+         */
+
+        const answer =
+            await peer.createAnswer();
+
+
+        await peer.setLocalDescription(answer);
+
+
+        /*
+         * Espera ICE
+         */
+
+        await esperarICE();
+
+
+        /*
+         * Mostra Answer
+         */
+
+        document.getElementById("answer").value =
+            JSON.stringify(peer.localDescription);
+
+
+        document.getElementById("status").innerText =
+            "🟡 Answer criada. Envie para o dispositivo A.";
+
+
+    } catch (error) {
+
+        console.error(error);
+
+        alert(
+            "Erro ao criar Answer."
+        );
+
+    }
+
+}
+
+
+/*
+ * ESPERAR ICE
+ */
+
+function esperarICE() {
+
+    return new Promise(resolve => {
+
+        if (
+            peer.iceGatheringState === "complete"
+        ) {
+
+            resolve();
+
+            return;
+
+        }
+
+
+        function verificar() {
+
+            if (
+                peer.iceGatheringState === "complete"
+            ) {
+
+                peer.removeEventListener(
+                    "icegatheringstatechange",
+                    verificar
+                );
+
+                resolve();
+
+            }
+
+        }
+
+
+        peer.addEventListener(
+            "icegatheringstatechange",
+            verificar
+        );
+
+    });
+
+}
+
+
+/*
+ * CONFIGURAR DATA CHANNEL
+ */
+
+function configurarChannel(channel) {
+
+    channel.onopen = () => {
+
+        console.log(
+            "DataChannel conectado!"
+        );
+
+
+        document.getElementById("status").innerText =
+            "🟢 CONECTADO AO DISPOSITIVO A!";
+
+    };
+
+
+    channel.onclose = () => {
+
+        document.getElementById("status").innerText =
+            "🔴 Conexão encerrada";
+
+    };
+
+
+    channel.onerror = error => {
+
+        console.error(
+            "DataChannel error:",
+            error
+        );
+
+    };
+
+
+    channel.onmessage = event => {
+
+        try {
+
+            const message =
+                JSON.parse(event.data);
+
+
+            console.log(
+                "Recebi:",
+                message
+            );
+
+
+            if (
+                message.type === "chat"
+            ) {
+
+                adicionarMensagem(
+                    message.text,
+                    false
+                );
+
+            }
+
+        } catch (error) {
+
+            console.error(
+                "Mensagem inválida:",
+                event.data
+            );
+
+        }
+
+    };
+
+}
+
+
+/*
+ * ENVIAR MENSAGEM
+ */
+
+function enviarMensagem() {
+
+    const input =
+        document.getElementById("mensagem");
+
+
+    const texto =
+        input.value.trim();
+
+
+    if (!texto) {
+        return;
+    }
+
+
+    if (
+        !channel ||
+        channel.readyState !== "open"
+    ) {
+
+        alert(
+            "Ainda não conectado ao dispositivo A."
+        );
+
+        return;
+
+    }
+
+
+    const message = {
+
+        type: "chat",
+
+        text: texto
+
+    };
+
+
+    channel.send(
+        JSON.stringify(message)
+    );
+
+
+    adicionarMensagem(
+        texto,
+        true
+    );
+
+
+    input.value = "";
+
+}
+
+
+/*
+ * MOSTRAR MENSAGEM
+ */
+
+function adicionarMensagem(
+    texto,
+    minha
+) {
+
+    const chat =
+        document.getElementById("chat");
+
+
+    const div =
+        document.createElement("div");
+
+
+    div.className =
+        minha
+            ? "msg mine"
+            : "msg";
+
+
+    div.textContent =
+        texto;
+
+
+    chat.appendChild(div);
+
+
+    chat.scrollTop =
+        chat.scrollHeight;
+
+}
+
+</script>
+
+</body>
+</html>
